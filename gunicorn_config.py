@@ -1,4 +1,4 @@
-# Gunicorn configuration for production
+# Gunicorn configuration for production (behind Nginx)
 bind = "127.0.0.1:8000"
 workers = 3
 worker_class = "sync"
@@ -7,8 +7,8 @@ timeout = 120
 keepalive = 5
 
 # Logging
-accesslog = "/var/log/gunicorn/access.log"
-errorlog = "/var/log/gunicorn/error.log"
+accesslog = "-"  # Log to stdout
+errorlog = "-"   # Log to stderr
 loglevel = "info"
 
 # Process naming
@@ -16,10 +16,10 @@ proc_name = "checklist_app"
 
 # Server mechanics
 daemon = False
-pidfile = "/var/run/gunicorn.pid"
+pidfile = None
 user = None
 group = None
 tmp_upload_dir = None
 
-# SSL (handled by Nginx)
-# Gunicorn runs behind Nginx reverse proxy
+# SSL handled by Nginx + Certbot
+# Gunicorn serves HTTP on localhost only
