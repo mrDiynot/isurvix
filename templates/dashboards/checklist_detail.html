@@ -411,7 +411,7 @@
                         <!-- Electrical Data (rows 261-263) -->
                         <div class="mb-4">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6>Electrical Data (Rows 261-263)</h6>
+                                <h6>Other Operator Electrical Details(Rows 261-263)</h6>
                                 <button class="btn btn-sm btn-success add-electrical">
                                     <i class="fa-solid fa-plus me-1"></i>Add Row
                                 </button>
@@ -473,6 +473,18 @@
 
         console.log('✅ Variables initialized');
 
+        // Restore last active section on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedSection = localStorage.getItem('checklist_current_section');
+            if (savedSection) {
+                const sectionExists = document.querySelector(`[data-section="${savedSection}"].section-card`);
+                if (sectionExists) {
+                    showSection(savedSection);
+                    console.log('✅ Restored section:', savedSection);
+                }
+            }
+        });
+
         // Section navigation
         document.querySelectorAll('.section-btn').forEach(btn => {
             btn.addEventListener('click', function () {
@@ -514,6 +526,9 @@
             const btn = document.querySelector(`[data-section="${sectionName}"].section-btn`);
             btn.classList.remove('btn-outline-primary');
             btn.classList.add('btn-primary', 'active');
+
+            // Save current section to localStorage
+            localStorage.setItem('checklist_current_section', sectionName);
 
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
@@ -624,6 +639,7 @@
                         }
                         // Clear the file input
                         input.value = '';
+                        updateSectionCounts();
                         showSaveIndicator();
                         console.log('✅ Upload complete');
                     } else {
@@ -960,7 +976,7 @@
                                     oninput="saveElectricalData(this)">
                             </div>
                             <div class="col-md-3">
-                                <label class="form-label">Remarks (F)</label>
+                                <label class="form-label">Other Operator Name</label>
                                 <input type="text" class="form-control form-control-sm" 
                                     data-field="remarks"
                                     data-row="${rowNumber}"
@@ -1141,15 +1157,31 @@
                 const btn = document.querySelector(`.section-btn[data-section="${sectionName}"]`);
                 if (!btn) return;
 
-                // Count all fields including disabled ones (for view-only mode)
+                // Count text/textarea fields
                 const fields = section.querySelectorAll('input[data-row]:not([type="hidden"]):not([type="file"]), textarea[data-row]');
-                const total = fields.length;
+                
+                // Count image containers (rows with at least one image)
+                const imageContainers = section.querySelectorAll('[id^="images-"]');
+                let imageFieldsWithImages = 0;
+                imageContainers.forEach(container => {
+                    const images = container.querySelectorAll('.image-preview');
+                    if (images.length > 0) {
+                        imageFieldsWithImages += 1;
+                    }
+                });
+
+                const total = fields.length + imageContainers.length;
                 let filled = 0;
+                
+                // Count filled text fields
                 fields.forEach((field) => {
                     if ((field.value || '').trim() !== '') {
                         filled += 1;
                     }
                 });
+                
+                // Add image rows that have at least one image
+                filled += imageFieldsWithImages;
 
                 const badge = btn.querySelector('.section-count');
                 if (badge) {
@@ -1167,23 +1199,33 @@
                 modal.show();
                 startCamera();
                 getLocation();
+                
+                // Request compass permission (for iOS 13+) and start compass
+                requestOrientationPermission();
+                
                 if (!compassInterval) {
                     compassInterval = setInterval(() => {
                         drawOverlay();
-                        // Update heading display
-                        const headingText = `${compassHeading.toFixed(1)}°`;
+                        // Update heading display with better formatting
+                        const headingDegrees = Math.round(compassHeading);
+                        const headingText = `${headingDegrees}°`;
+                        const cardinalDirection = getCardinalDirection(compassHeading);
+                        
                         document.getElementById('compassParams').innerHTML =
-                            `<div style="font-size:1rem;font-weight:bold;color:#FFD700;">${headingText}</div>`;
+                            `<div style="font-size:1.2rem;font-weight:bold;color:#FFD700;text-shadow:2px 2px 4px rgba(0,0,0,0.8);">${headingText} ${cardinalDirection}</div>`;
 
-                        // Update info display - site ID, date, time, heading
+                        // Update info display - site ID, date, time, heading, GPS coordinates
                         const now = new Date();
+                        const latText = coords.lat !== null ? coords.lat.toFixed(6) : 'Getting...';
+                        const lngText = coords.lng !== null ? coords.lng.toFixed(6) : 'Getting...';
 
                         document.getElementById('cameraInfo').innerHTML =
                             `<div style="font-size:0.9rem;line-height:1.5;">
                                 <div><b>Site ID:</b> ${siteId}</div>
                                 <div><b>Date:</b> ${now.toLocaleDateString()}</div>
                                 <div><b>Time:</b> ${now.toLocaleTimeString()}</div>
-                                <div><b>Heading:</b> ${headingText}</div>
+                                <div><b>Heading:</b> ${headingText} ${cardinalDirection}</div>
+                                <div><b>GPS:</b> ${latText}, ${lngText}</div>
                             </div>`;
                     }, 300);
                 }
@@ -1261,12 +1303,68 @@
             }
         }
 
-        // Compass (DeviceOrientation)
-        window.addEventListener('deviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation', function (event) {
-            if (event.absolute || event.webkitCompassHeading !== undefined || event.alpha !== null) {
-                compassHeading = event.webkitCompassHeading || (360 - event.alpha) || 0;
+        // Helper function to get cardinal direction
+        function getCardinalDirection(degrees) {
+            const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+            const index = Math.round(degrees / 45) % 8;
+            return directions[index];
+        }
+
+        // Compass (DeviceOrientation) - Request permission for iOS 13+
+        async function requestOrientationPermission() {
+            console.log('🧭 Requesting compass permission...');
+            
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS 13+ requires explicit permission
+                try {
+                    console.log('📱 iOS device detected - requesting permission...');
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        console.log('✅ Compass permission granted');
+                        startCompass();
+                    } else {
+                        console.warn('⚠️ Compass permission denied');
+                        alert('Compass access denied. Heading will not be available.');
+                    }
+                } catch (error) {
+                    console.error('❌ Error requesting compass permission:', error);
+                    alert('Error accessing compass: ' + error.message);
+                }
+            } else {
+                // Android/older iOS - no permission needed
+                console.log('📱 Android/older iOS detected - starting compass directly');
+                startCompass();
             }
-        });
+        }
+
+        function startCompass() {
+            console.log('🧭 Starting compass listener...');
+            
+            const handleOrientation = (event) => {
+                // iOS uses webkitCompassHeading (0-360, true heading)
+                if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
+                    compassHeading = event.webkitCompassHeading;
+                    console.log('🧭 iOS Compass:', compassHeading.toFixed(1) + '°');
+                }
+                // Android/other devices use alpha (0-360, needs conversion)
+                else if (event.alpha !== undefined && event.alpha !== null) {
+                    compassHeading = 360 - event.alpha;
+                    console.log('🧭 Android Compass:', compassHeading.toFixed(1) + '° (from alpha:', event.alpha.toFixed(1) + ')');
+                }
+                else {
+                    console.warn('⚠️ No compass data available');
+                }
+            };
+            
+            // Try deviceorientationabsolute first (more accurate)
+            if ('ondeviceorientationabsolute' in window) {
+                window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+                console.log('✅ Using deviceorientationabsolute');
+            } else {
+                window.addEventListener('deviceorientation', handleOrientation, true);
+                console.log('✅ Using deviceorientation');
+            }
+        }
 
         // Overlay drawing - Small compass at top left
         function drawOverlay() {
@@ -1491,16 +1589,19 @@
 
             // 4. Draw info box at bottom right
             const now = new Date();
+            const latText = coords.lat !== null ? coords.lat.toFixed(6) : 'N/A';
+            const lngText = coords.lng !== null ? coords.lng.toFixed(6) : 'N/A';
             const infoLines = [
                 `Site ID: ${siteId}`,
                 `Date: ${now.toLocaleDateString()}`,
                 `Time: ${now.toLocaleTimeString()}`,
-                `Heading: ${headingText}`
+                `Heading: ${headingText}`,
+                `GPS: ${latText}, ${lngText}`
             ];
 
             const padding = 12;
             const lineHeight = 20;
-            const boxWidth = 220;
+            const boxWidth = 280;
             const boxHeight = (infoLines.length * lineHeight) + (padding * 2);
             const boxX = canvas.width - boxWidth - 10;
             const boxY = canvas.height - boxHeight - 10;
@@ -1583,13 +1684,11 @@
                                     container.appendChild(imgDiv);
                                 });
 
-                                alert('Photo captured successfully!');
-
-                                setTimeout(function () {
-                                    const modal = bootstrap.Modal.getInstance(document.getElementById('cameraModal'));
-                                    if (modal) modal.hide();
-                                    showSaveIndicator();
-                                }, 500);
+                                // Auto-close modal after successful capture
+                                const modal = bootstrap.Modal.getInstance(document.getElementById('cameraModal'));
+                                if (modal) modal.hide();
+                                updateSectionCounts();
+                                showSaveIndicator();
                             } else {
                                 alert('Photo saved but display failed. Please refresh.');
                             }

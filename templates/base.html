@@ -25,16 +25,16 @@
         <div class="container-fluid px-3 px-md-4">
             <div class="d-flex align-items-center justify-content-between py-3">
                 <div class="d-flex align-items-center gap-3">
-                    <span class="badge rounded-pill shadow-soft">
-                        <i class="fa-solid fa-clipboard-check me-2"></i>iSurvix
-                    </span>
-                    <span class="text-muted d-none d-md-inline" style="font-size: 0.8rem;">Intelligent Survey
-                        Index</span>
+                    <a href="/" class="text-decoration-none">
+                        <span class="badge rounded-pill shadow-soft" style="background: var(--primary); color: white; font-size: 1rem; padding: 0.5rem 1rem;">
+                            <i class="fa-solid fa-clipboard-check me-2"></i>iSurvix Survey Checker
+                        </span>
+                    </a>
                 </div>
                 <div class="d-flex align-items-center gap-2 gap-md-3">
                     {% if request.user.is_authenticated or request.session.is_dev_admin %}
                     <div class="d-none d-md-flex align-items-center gap-2 px-3 py-2 rounded-3"
-                        style="background: rgba(99, 102, 241, 0.1);">
+                        style="background: rgba(99, 181, 11, 0.1);">
                         <i class="fa-solid fa-user-circle text-primary" style="font-size: 1.25rem;"></i>
                         <div class="d-flex flex-column">
                             <small class="text-muted" style="font-size: 0.65rem; line-height: 1;">Logged in as</small>

@@ -21,6 +21,27 @@ from PIL import Image as PilImage
 from .models import Checklist, Profile, Project, GeoLocation, WorkAssignment
 
 
+def home_view(request):
+	"""Homepage view - redirect authenticated users to their dashboard"""
+	# If user is logged in, redirect them to their dashboard
+	if request.session.get("is_dev_admin"):
+		return redirect("dev_admin")
+	
+	if request.user.is_authenticated:
+		profile = getattr(request.user, "profile", None)
+		if profile and profile.role == Profile.Roles.ADMIN:
+			request.session["is_dev_admin"] = True
+			return redirect("dev_admin")
+		if profile and profile.path:
+			return redirect(f"/{profile.path}")
+		if request.user.is_staff or request.user.is_superuser:
+			request.session["is_dev_admin"] = True
+			return redirect("dev_admin")
+	
+	# Show public landing page for non-authenticated users
+	return render(request, "dashboards/home.html")
+
+
 @require_http_methods(["GET", "POST"])
 def login_view(request):
 	if request.session.get("is_dev_admin"):
@@ -1188,9 +1209,14 @@ def _create_or_update_excel_copy(checklist: Checklist):
 				continue
 			abs_path = default_storage.path(image_path)
 			image = ExcelImage(abs_path)
-			# Keep original image size, expand cell to fit image
-			img_w = image.width or 0
-			img_h = image.height or 0
+			# Set image size to exactly 2.5" x 2" (240x192 pixels at 96 DPI)
+			image.width = 2.5 * 96  # 2.5 inches = 240 pixels
+			image.height = 2 * 96    # 2 inches = 192 pixels
+			
+			img_w = image.width
+			img_h = image.height
+			
+			# Adjust column width to fit image
 			if img_w > 0:
 				col_letter = get_column_letter(column_index)
 				worksheet.column_dimensions[col_letter].width = max(
@@ -1480,13 +1506,9 @@ def location_import(request):
 
 @require_http_methods(["POST"])
 def location_delete(request, location_id: int):
-	"""Delete a location pin from the map"""
-	if not request.session.get("is_dev_admin") and not (
-		request.user.is_authenticated and 
-		hasattr(request.user, 'profile') and 
-		request.user.profile.role == Profile.Roles.TEAM_LEAD
-	):
-		messages.error(request, "Permission denied.")
+	"""Delete a location pin from the map (Admin only)"""
+	if not request.session.get("is_dev_admin"):
+		messages.error(request, "Permission denied. Only admins can delete locations.")
 		return redirect("login")
 	
 	location = get_object_or_404(GeoLocation, id=location_id)
@@ -1494,28 +1516,20 @@ def location_delete(request, location_id: int):
 	location.delete()
 	messages.success(request, f"Location '{location_name}' deleted successfully!")
 	
-	if request.session.get("is_dev_admin"):
-		return redirect("dev_admin")
-	return redirect("user_dashboard", path=request.user.profile.path)
+	return redirect("dev_admin")
 
 
 @require_http_methods(["POST"])
 def location_delete_all(request):
-	"""Delete all location pins from the map"""
-	if not request.session.get("is_dev_admin") and not (
-		request.user.is_authenticated and 
-		hasattr(request.user, 'profile') and 
-		request.user.profile.role == Profile.Roles.TEAM_LEAD
-	):
-		messages.error(request, "Permission denied.")
+	"""Delete all location pins from the map (Admin only)"""
+	if not request.session.get("is_dev_admin"):
+		messages.error(request, "Permission denied. Only admins can delete locations.")
 		return redirect("login")
 
 	GeoLocation.objects.all().delete()
 	messages.success(request, "All locations deleted.")
 
-	if request.session.get("is_dev_admin"):
-		return redirect("dev_admin")
-	return redirect("user_dashboard", path=request.user.profile.path)
+	return redirect("dev_admin")
 
 
 @require_http_methods(["POST"])
